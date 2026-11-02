@@ -222,6 +222,96 @@ layers the realistic ceiling is 3–4 t/s.
 | 2 | 131 072 | yes | 40 | none | 5.9 GB | 37.9 | 35.0 | 25.0 |
 | 3 | 32 768 | no | 35 | none | 5.6 GB | 34.0 | 31.4 | — |
 
+These are the best runs, measured on a cool machine. A later re-check of config 1 in a hot
+session gave 37.4 short / 34.5 chat / 33.9 @8k. Laptop thermals move the result by 10–15%;
+compare configs inside one session.
+
+## 11. NInfer-3090 mechanics: what transfers
+
+Source: `ninfer-3090-master` (RTX 3090/5090, groupwise `.ninfer` artifacts, no CPU offload).
+Its headline DFlash2/MTP3 numbers need 24 GB VRAM and cannot run on 6 GB. On a 5090 the same
+35B-A3B decodes at 600–900 t/s because all experts stay in VRAM; here experts stream from
+32 GB RAM at ~43 t/s. The portable parts were tested here.
+
+### DFlash2 draft (`--spec-type draft-dflash`)
+
+A compatible GGUF draft exists for exactly this target:
+`aminya/Qwen3.6-35B-A3B-DFlash2-GGUF`, Q4_K_M 315 MB. llama.cpp b12034 loads it and runs
+without errors. It is still slower than MTP:
+
+| config | nmax | 32k short | 32k chat | 8k | VRAM |
+|---|---|---|---|---|---|
+| MTP (same session) | 2 | 37.4 | 34.5 | 33.9 | 5409 |
+| DFlash2 nmax3 | 3 | 37.6 | 34.9 | — | 5435 |
+| DFlash2 Q4_K_M nmax4 | 4 | 36.4 | 37.4 | 28.5 | 5530 |
+| DFlash2 Q8_0 nmax4 | 4 | 36.0 | 36.4 | 28.7 | 5610 |
+| DFlash2 nmax5 | 5 | 33.0 | 34.5 | — | 5590 |
+| DFlash2 nmax7 | 7 | 28.1 | 28.3 | — | 5850 |
+
+Draft acceptance was 0.46–0.56 with mean accepted length 2.8–4.9. The draft is a 6-layer
+block model that reads target hidden states; on this 6 GB laptop its overhead and the larger
+verify batches cost more than the accepted tokens save. The recommended Q8_0 file is no
+better (28.7 @8k). At 8k DFlash2 is 16% slower than MTP. **Not used.**
+
+### n-gram copy drafting (NInfer `--ngram-draft-tokens 15`)
+
+llama.cpp `ngram-simple`, optionally mixed with MTP:
+`--spec-ngram-simple-size-n 12 --spec-ngram-simple-size-m 16 --spec-ngram-simple-min-hits 2`.
+Tested on a 6k-token prompt that asks the model to reproduce the text (a file-rewrite turn):
+
+| spec | copy 512 tokens | normal 32k short / chat / 8k | 30k |
+|---|---|---|---|
+| none | 27.4 | — | — |
+| MTP nmax2 | 40.9 | 37.4 / 34.5 / 33.9 | 27.7 |
+| ngram-simple m16 | 42.6 | — | — |
+| MTP + ngram m16, hits 1 | 42.9 | 37.5 / 35.4 / 33.4 | — |
+| **MTP + ngram m16, hits 2** | **43.0** | 37.9 / 35.9 / 33.0 | 28.0 |
+
+On copy turns ngram drafts 13–14 token spans at ~80% acceptance and gains ~5% over MTP.
+On normal code it is neutral within run-to-run noise. This is the one NInfer idea that
+transfers, but the win is workload-specific. It is not enabled by default; config
+`82-mtp2-ngram16-hits2` is the optional copy-heavy profile.
+
+### `--cache-reuse`
+
+The server refuses it for this model:
+`cache_reuse is not supported by this context, it will be disabled`.
+The hybrid gated-delta-net/SSM state cannot be shifted like a pure attention KV cache.
+An edited 22.7k prompt still re-prefilled 22,731 tokens (70 s) with and without
+`--cache-reuse 256`. Normal append-only prefix reuse still works (4 tokens, 0.1 s).
+
+### q4_0 V cache and one more GPU layer
+
+`-ctk q8_0 -ctv q4_0` saves ~0.36 GB at 128k, enough for `--n-cpu-moe 39`. At 32k it gave
+39.0 short / 34.7 @8k (vs 37.4 / 33.9), but at 120k it fell to 19.35 t/s. The reason is in
+the log:
+
+```
+no FlashAttention vector kernel compiled for K/V types q8_0-q4_0,
+converting K and V to f16 instead (slow)
+```
+
+So the stock binary cannot use q4_0 V efficiently at long context. q8_0/q8_0 cfg 2 stays
+at 25.0 t/s @120k. A custom build with `GGML_CUDA_FA_QUANTS=q8_0-q4_0` might change the
+trade-off, but the quality and dequant costs remain; not worth it here.
+
+### Other NInfer ideas
+
+* **MTP3**: already tested — 39.2/32.5 vs 41.8/31.3 for nmax2 at ncmoe36; at 120k it gave
+  21.1 t/s vs 25.0 for nmax2 (5933 MiB). nmax2 wins.
+* **Lossy long prefill**: dense-27B-only in NInfer and explicitly refused for the 35B-A3B;
+  it also risks breaking exact file edits by coding agents.
+* **Decode during prefill / layer slices**: needs multiple concurrent lanes; this setup runs
+  one slot, and llama.cpp has no equivalent scheduler.
+* **rk4v4 / paged KV / ReplaySSM / cuBLAS prefill**: engine-specific and tied to the 24 GB
+  `.ninfer` artifact; not portable to llama.cpp on 6 GB.
+* **DSpark / EAGLE-3 drafts**: both exist for this target, but DFlash2 already loses 16% at
+  8k. Another draft changes acceptance, not the fact that every verified token still reads
+  experts from RAM. Not pursued.
+
+Conclusion: the three configs remain the best. DFlash2 does not transfer; ngram copy is a
+small optional win for file-rewrite turns; q4_0 V cache is a trap with the stock binary.
+
 ## Reproducing
 
 ```bat
@@ -230,6 +320,11 @@ python bench\suite.py --configs "bench/configs/4[34]*.json" --tests short,mid
 python bench\run.py --config bench\configs\50-qwen36-mtp-128k-ncmoe40.json --tests ctx
 python bench\suite.py --configs "bench/configs/6[0-2]*.json" --tests short,mid
 python bench\reasoning_probe.py
+
+:: NInfer comparison
+python bench\run.py --config bench\configs\73-dflash2-32k-nmax4.json --tests short,mid
+python bench\copy_probe.py --config bench\configs\82-mtp2-ngram16-hits2.json
+python bench\cache_reuse_probe.py
 ```
 
 Results: `bench/results/`, logs: `bench/logs/`.
