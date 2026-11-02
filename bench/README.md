@@ -19,6 +19,11 @@ python bench\run.py --config bench\configs\50-qwen36-mtp-128k-ncmoe40.json --tes
 
 :: reasoning-flag behavior through /v1/chat/completions
 python bench\reasoning_probe.py
+
+:: speculative-mode comparisons (DFlash2, ngram copy, cache reuse)
+python bench\run.py --config bench\configs\73-dflash2-32k-nmax4.json --tests short,mid
+python bench\copy_probe.py --config bench\configs\82-mtp2-ngram16-hits2.json
+python bench\cache_reuse_probe.py
 ```
 
 Output:

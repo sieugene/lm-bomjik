@@ -28,7 +28,8 @@ Generation is greedy (`temperature 0`) with `ignore_eos`; "short" is a ~450-toke
 The official Q4_K_M + the separate **MTP head** (`mtp-Qwen3.6-35B-A3B-Q4_0.gguf`, 1 GB)
 is the fastest correct option: **+9–15%** generation for ~0.8 GB VRAM.
 UD-IQ4_XS / UD-Q3_K_XL are faster in prefill but only ~24 tok/s in generation because
-their IQ3 experts are slower on CPU.
+their IQ3 experts are slower on CPU. Laptop thermals move the results by 10–15%: a hot
+re-check of config 1 gave 37.4 short / 34.5 chat / 33.9 @8k.
 
 ## Quick start
 
@@ -117,6 +118,16 @@ If the client shows no reasoning, add
 * A 120k-token prefill takes ~6.5 minutes (309 t/s); cached-prefix follow-ups are instant.
   The GPU reaches ~89 °C and clocks down during long prefills, so compare configs
   within one session.
+
+Tested and rejected:
+
+* **DFlash2 draft** (the NInfer-3090 headline): a compatible GGUF exists and runs, but on
+  6 GB it is 16% slower than MTP at 8k because the 6-layer block draft costs more than it saves.
+* **`--cache-reuse`**: disabled for this hybrid SSM model; only normal prefix reuse works.
+* **q4_0 V cache**: frees ~0.36 GB at 128k, but this build falls back to f16 attention and
+  drops 120k generation from 25.0 to 19.4 t/s.
+* **n-gram copy speculation**: neutral on normal code, ~5% faster on file-rewrite turns.
+  Optional profile: `bench/configs/82-mtp2-ngram16-hits2.json`.
 
 Full journal: [BENCHMARKS.md](BENCHMARKS.md). Harness: [bench/README.md](bench/README.md).
 
