@@ -1,0 +1,9 @@
+{
+ "name": "13-qwen38-iq4xs-ncmoe35",
+ "notes": "Qwen3.8-35B-A3B-Distill IQ4_XS, 5 MoE layers on GPU, 32k",
+ "model": "D:\\AI\\Models\\Qwen3.8-35B-A3B-IQ4_XS.gguf",
+ "args": ["-m", "{model}", "--alias", "qwen3.8-35b-a3b", "--jinja", "-fa", "on", "-ngl", "999",
+          "--n-cpu-moe", "35", "-ctk", "q8_0", "-ctv", "q8_0", "-np", "1", "--load-mode", "none",
+          "-c", "32768", "--temp", "1.0", "--top-p", "0.95", "--top-k", "20", "--min-p", "0.0",
+          "--host", "127.0.0.1", "--port", "8080", "-fit", "off"]
+}

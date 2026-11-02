@@ -1,0 +1,31 @@
+# Model weights — download with download-models.bat
+Models/
+
+# llama.cpp binaries — place a CUDA build in llama-cuda/ locally
+llama-cuda/
+
+# Benchmark artifacts
+bench/logs/
+bench/results/
+bench/qwen_chat_template.jinja
+llama-server-help.txt
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local configuration and secrets
+opencode.jsonc
+.env
+.env.*

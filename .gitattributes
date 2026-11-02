@@ -1,0 +1,13 @@
+* text=auto
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.jsonc text eol=lf
+*.jinja text eol=lf
+
+*.gguf binary
+*.exe binary
+*.dll binary
